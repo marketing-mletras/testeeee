@@ -407,7 +407,7 @@
     resizeCanvas();
     setupWalls();
     var v = viewportSize();
-    var baseScale = Math.min(v.w, v.h) / 6 / 80;
+    var baseScale = Math.min(v.w, v.h) / 10 / 80;
     prepareGlyphs(Math.max(1.1, Math.min(2.2, baseScale)));
     spawnLetters();
     setupMouse();
