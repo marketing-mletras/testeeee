@@ -136,7 +136,15 @@
   // O limite do "mundo" físico é SEMPRE o tamanho real da tela/janela,
   // ponto. Sem caixa fixa, sem letterbox — 100% de largura e altura,
   // em qualquer aparelho.
+  // window.innerWidth/innerHeight ("layout viewport") pode ser diferente
+  // da área que aparece de fato na tela do celular ("visual viewport"),
+  // por causa da barra de endereço dinâmica do Safari/Chrome mobile.
+  // visualViewport reflete a área REALMENTE visível — é isso que define
+  // os limites do mundo físico, não o innerWidth/innerHeight.
   function viewportSize() {
+    if (window.visualViewport) {
+      return { w: window.visualViewport.width, h: window.visualViewport.height };
+    }
     return { w: window.innerWidth, h: window.innerHeight };
   }
 
@@ -407,21 +415,20 @@
   }
 
   var resizeDebounce = null;
-  window.addEventListener("resize", function () {
+  function handleViewportChange(delay) {
     clearTimeout(resizeDebounce);
     resizeDebounce = setTimeout(function () {
       resizeCanvas();
       setupWalls();
       keepLettersInsideViewport();
-    }, 120);
-  });
-  window.addEventListener("orientationchange", function () {
-    setTimeout(function () {
-      resizeCanvas();
-      setupWalls();
-      keepLettersInsideViewport();
-    }, 250);
-  });
+    }, delay || 120);
+  }
+
+  window.addEventListener("resize", function () { handleViewportChange(120); });
+  window.addEventListener("orientationchange", function () { handleViewportChange(250); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () { handleViewportChange(80); });
+  }
 
   document.getElementById("start-btn").addEventListener("click", function () {
     enableMotion();
