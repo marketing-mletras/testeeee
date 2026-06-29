@@ -15,7 +15,7 @@
     touch-action: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
-  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; }
+  #stage { position: fixed; inset: 0; background: #000; }
   canvas { display: block; background: #000; }
 
   #start-overlay {
@@ -133,35 +133,23 @@
   var ctx = canvas.getContext("2d");
   var DPR = Math.min(window.devicePixelRatio || 1, 2.5);
 
-  // Caixa fixa 9:16 (proporção de tela de celular), centralizada, com
-  // barras pretas se a janela real tiver outra proporção.
-  var ASPECT_W = 9, ASPECT_H = 16;
-  var box = { w: 0, h: 0 };
-  function computeBox() {
-    var winW = window.innerWidth, winH = window.innerHeight;
-    if (winW / winH > ASPECT_W / ASPECT_H) {
-      box.h = winH;
-      box.w = Math.round(box.h * (ASPECT_W / ASPECT_H));
-    } else {
-      box.w = winW;
-      box.h = Math.round(box.w * (ASPECT_H / ASPECT_W));
-    }
-  }
-
+  // O limite do "mundo" físico é SEMPRE o tamanho real da tela/janela,
+  // ponto. Sem caixa fixa, sem letterbox — 100% de largura e altura,
+  // em qualquer aparelho.
   function viewportSize() {
-    return { w: box.w, h: box.h };
+    return { w: window.innerWidth, h: window.innerHeight };
   }
 
   function resizeCanvas() {
-    computeBox();
-    canvas.width = box.w * DPR;
-    canvas.height = box.h * DPR;
-    canvas.style.width = box.w + "px";
-    canvas.style.height = box.h + "px";
+    var v = viewportSize();
+    canvas.width = v.w * DPR;
+    canvas.height = v.h * DPR;
+    canvas.style.width = v.w + "px";
+    canvas.style.height = v.h + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
 
-  var WALL_T = 120;
+  var WALL_T = 140;
   var walls = [];
   function setupWalls() {
     if (walls.length) Composite.remove(world, walls);
@@ -173,6 +161,29 @@
       Bodies.rectangle(v.w + WALL_T / 2, v.h / 2, WALL_T, v.h + WALL_T * 2, { isStatic: true, restitution: 0.5 })
     ];
     Composite.add(world, walls);
+  }
+
+  // Garante que NENHUMA letra fique fora da tela depois que a janela
+  // muda de tamanho (resize, rotação de tela, teclado abrindo, etc).
+  // As paredes são recriadas no lugar novo, mas um corpo que já estava
+  // perto da borda antiga pode ficar "para fora" da borda nova até a
+  // física resolver — aqui a gente força a posição de volta pra dentro
+  // na hora, sem esperar a física empurrar.
+  function keepLettersInsideViewport() {
+    var v = viewportSize();
+    items.forEach(function (it) {
+      var b = it.body;
+      var halfW = (b.bounds.max.x - b.bounds.min.x) / 2;
+      var halfH = (b.bounds.max.y - b.bounds.min.y) / 2;
+      var minX = Math.min(halfW, v.w / 2), maxX = Math.max(v.w - halfW, v.w / 2);
+      var minY = Math.min(halfH, v.h / 2), maxY = Math.max(v.h - halfH, v.h / 2);
+      var x = Math.min(Math.max(b.position.x, minX), maxX);
+      var y = Math.min(Math.max(b.position.y, minY), maxY);
+      if (x !== b.position.x || y !== b.position.y) {
+        Body.setPosition(b, { x: x, y: y });
+        Body.setVelocity(b, { x: b.velocity.x * 0.3, y: b.velocity.y * 0.3 });
+      }
+    });
   }
 
   // ---------- Build letter bodies ----------
@@ -203,7 +214,7 @@
       // As letras nascem JÁ DENTRO da caixa (perto do topo), não acima
       // de uma parede fechada — senão ficam presas por fora, sem cair.
       var x = v.w * (0.12 + 0.76 * (idx / (glyphs.length - 1 || 1)) + (Math.random() - 0.5) * 0.06);
-      var y = 40 + idx * 26 + Math.random() * 30;
+      var y = Math.min(40 + idx * 26 + Math.random() * 30, v.h * 0.4);
       var body;
       try {
         if (g.hull.length < 3) throw new Error("hull vazio");
@@ -395,12 +406,21 @@
     requestAnimationFrame(loop);
   }
 
+  var resizeDebounce = null;
   window.addEventListener("resize", function () {
-    resizeCanvas();
-    setupWalls();
+    clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(function () {
+      resizeCanvas();
+      setupWalls();
+      keepLettersInsideViewport();
+    }, 120);
   });
   window.addEventListener("orientationchange", function () {
-    setTimeout(function () { resizeCanvas(); setupWalls(); }, 250);
+    setTimeout(function () {
+      resizeCanvas();
+      setupWalls();
+      keepLettersInsideViewport();
+    }, 250);
   });
 
   document.getElementById("start-btn").addEventListener("click", function () {
